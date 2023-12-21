@@ -1,2 +1,2 @@
 # pokemonOptimizer
-Team optimization of gen. 4 Pokemon games for each area.
+Team optimization of gen. 1 Pokemon games for each area.
