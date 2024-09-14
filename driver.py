@@ -16,7 +16,7 @@ device = (
     else "CPU"
 )
 
-print(f"Using {device} device")
+print(f"Using {device}")
 
 df = pd.read_csv('Pokemon Database.csv')
 effect_matrix = pd.read_csv('chart.csv')
@@ -141,7 +141,7 @@ class PokemonBattleModel(nn.Module):
         self.fc1 = nn.Linear(input_size, 128)  # first hidden layer
         self.fc2 = nn.Linear(128, 64)          # second hidden layer
         self.fc3 = nn.Linear(64, output_size)  # output layer
-        self.relu = nn.ReLU()                  # activation function
+        self.relu = nn.ReLU()                  # activation function, might tweak this
         self.softmax = nn.Softmax(dim=1)       # softmax for probabilities
         
     def forward(self, x):
@@ -158,3 +158,15 @@ model = PokemonBattleModel(input_size=input_size, output_size=output_size).to('d
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+# training and evaluation
+epochs = 25
+for epoch in range(epochs):
+    model.train()
+    rolling_loss = 0.0
+    pass
+
+# do something here
+# forward pass
+# backprop
+# test and score loop
