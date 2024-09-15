@@ -7,6 +7,8 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
+from sklearn.preprocessing import StandardScaler
+
 
 device = (
     "cuda"
@@ -110,7 +112,7 @@ else:
 # encoding and formatting the data
 label_encoder = LabelEncoder()
 y = label_encoder.fit_transform(expanded_df['Pokemon_B'])
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
 
 X_train = X_train.fillna(0)
 X_test = X_test.fillna(0)
@@ -118,32 +120,40 @@ X_test = X_test.fillna(0)
 X_train = X_train.astype(float)
 X_test = X_test.astype(float)
 
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
+
 # change type to tensors
-X_train_tensor = torch.tensor(X_train.values, dtype=torch.float32).to(device=device)
-X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32).to(device=device)
+X_train_tensor = torch.tensor(X_train, dtype=torch.float32).to(device=device)
+X_test_tensor = torch.tensor(X_test, dtype=torch.float32).to(device=device)
 y_train_tensor = torch.tensor(y_train, dtype=torch.long).to(device=device)
 y_test_tensor = torch.tensor(y_test, dtype=torch.long).to(device=device)
+
+
 
 # batching prep
 train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
 test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
-train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=32)
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True)
 
 
 class PokemonBattleModel(nn.Module):
     def __init__(self, input_size, output_size):
         super(PokemonBattleModel, self).__init__()
         self.fc1 = nn.Linear(input_size, 128)  # first hidden layer
+        self.dropout = nn.Dropout(p=0.5)       # dropout layer
+        self.relu = nn.ReLU()
         self.fc2 = nn.Linear(128, 64)          # second hidden layer
         self.fc3 = nn.Linear(64, output_size)  # output layer
-        self.relu = nn.ReLU()                  # activation function, might tweak this
-        self.softmax = nn.Softmax(dim=1)       # softmax for probabilities
+
         
     def forward(self, x):
         x = self.relu(self.fc1(x))
-        x = self.relu(self.fc2(x))
-        x = self.softmax(self.fc3(x))         
+        x = self.dropout(x)
+        x = self.relu(self.fc2(x))   
+        x = self.fc3(x)   
         return x
 
 # initialize model
@@ -153,10 +163,10 @@ output_size = len(label_encoder.classes_)
 model = PokemonBattleModel(input_size=input_size, output_size=output_size).to(device=device) # native gpu support or what
 
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
 # training and evaluation
-epochs = 20
+epochs = 25
 for epoch in range(epochs):
     model.train()
     running_loss = 0.0
@@ -168,6 +178,7 @@ for epoch in range(epochs):
         outputs = model(inputs)  # forward pass
         loss = criterion(outputs, labels)
         loss.backward()  # backprop
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
         
         running_loss += loss.item()
@@ -190,3 +201,4 @@ print(f"Test Accuracy: {accuracy * 100:.2f}%")
 #TODO
 # save model
 # make predictions
+# make gui
