@@ -9,11 +9,11 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
 
 device = (
-    "Cuda GPU"
+    "cuda"
     if torch.cuda.is_available()
     else "mps"
     if torch.backends.mps.is_available()
-    else "CPU"
+    else "cpu"
 )
 
 print(f"Using {device}")
@@ -67,12 +67,7 @@ def calculate_type_advantage(type1_A, type2_A, type1_B, type2_B):
 # this considers the possible choices for pokemon B and checks the matchup scores
 # this loop is so expensive lol parallelization would be awesome here
 expanded_data = []
-count = 0
 for index, row in df.iterrows():
-
-    count += 1
-    if count % 50 == 0:
-        print(count)
     
     for b_choice in pokeB_choices:
         temp_row = row.copy()  # copy row for pokemon A
@@ -117,22 +112,23 @@ label_encoder = LabelEncoder()
 y = label_encoder.fit_transform(expanded_df['Pokemon_B'])
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
+X_train = X_train.fillna(0)
+X_test = X_test.fillna(0)
+
+X_train = X_train.astype(float)
+X_test = X_test.astype(float)
+
 # change type to tensors
-X_train_tensor = torch.tensor(X_train.values, dtype=torch.float32)
-X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32)
-y_train_tensor = torch.tensor(y_train, dtype=torch.long)
-y_test_tensor = torch.tensor(y_test, dtype=torch.long)
+X_train_tensor = torch.tensor(X_train.values, dtype=torch.float32).to(device=device)
+X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32).to(device=device)
+y_train_tensor = torch.tensor(y_train, dtype=torch.long).to(device=device)
+y_test_tensor = torch.tensor(y_test, dtype=torch.long).to(device=device)
 
 # batching prep
 train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
 test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
 train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=32)
-
-train_dataset = train_dataset.to('device')
-test_dataset = test_dataset.to('device')
-train_loader = train_loader.to('device')
-test_loader = test_loader.to('device')
 
 
 class PokemonBattleModel(nn.Module):
@@ -154,19 +150,43 @@ class PokemonBattleModel(nn.Module):
 input_size = X_train.shape[1]
 output_size = len(label_encoder.classes_)
 
-model = PokemonBattleModel(input_size=input_size, output_size=output_size).to('device') # native gpu support or what
+model = PokemonBattleModel(input_size=input_size, output_size=output_size).to(device=device) # native gpu support or what
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 # training and evaluation
-epochs = 25
+epochs = 20
 for epoch in range(epochs):
     model.train()
-    rolling_loss = 0.0
-    pass
+    running_loss = 0.0
+    for inputs, labels in train_loader:
 
-# do something here
-# forward pass
-# backprop
-# test and score loop
+        inputs, labels = inputs.to(device), labels.to(device)
+        optimizer.zero_grad()
+        
+        outputs = model(inputs)  # forward pass
+        loss = criterion(outputs, labels)
+        loss.backward()  # backprop
+        optimizer.step()
+        
+        running_loss += loss.item()
+
+    print(f"Epoch {epoch+1}/{epochs}, Loss: {running_loss/len(train_loader)}")
+
+model.eval()
+correct = 0
+total = 0
+with torch.no_grad():
+    for inputs, labels in test_loader:
+        outputs = model(inputs)
+        _, predicted = torch.max(outputs, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum().item()
+
+accuracy = correct / total
+print(f"Test Accuracy: {accuracy * 100:.2f}%")
+
+#TODO
+# save model
+# make predictions
