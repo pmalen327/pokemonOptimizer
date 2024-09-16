@@ -131,12 +131,11 @@ y_train_tensor = torch.tensor(y_train, dtype=torch.long).to(device=device)
 y_test_tensor = torch.tensor(y_test, dtype=torch.long).to(device=device)
 
 
-
 # batching prep
 train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
 test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
-train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True)
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=True)
 
 
 class PokemonBattleModel(nn.Module):
@@ -166,7 +165,7 @@ criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
 # training and evaluation
-epochs = 25
+epochs = 100
 for epoch in range(epochs):
     model.train()
     running_loss = 0.0
@@ -201,4 +200,4 @@ print(f"Test Accuracy: {accuracy * 100:.2f}%")
 #TODO
 # save model
 # make predictions
-# make gui
+# make gui if super motivated
