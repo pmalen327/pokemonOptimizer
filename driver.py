@@ -134,8 +134,8 @@ y_test_tensor = torch.tensor(y_test, dtype=torch.long).to(device=device)
 # batching prep
 train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
 test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
-train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=32, shuffle=True)
+train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=128, shuffle=True)
 
 
 class PokemonBattleModel(nn.Module):
@@ -162,7 +162,7 @@ output_size = len(label_encoder.classes_)
 model = PokemonBattleModel(input_size=input_size, output_size=output_size).to(device=device) # native gpu support or what
 
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=1e-4)
+optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
 # training and evaluation
 epochs = 100
@@ -177,7 +177,7 @@ for epoch in range(epochs):
         outputs = model(inputs)  # forward pass
         loss = criterion(outputs, labels)
         loss.backward()  # backprop
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) # gradient clipping
         optimizer.step()
         
         running_loss += loss.item()
