@@ -1,0 +1,278 @@
+import tkinter as tk
+from tkinter import ttk
+import pandas as pd
+import random
+from PIL import Image, ImageTk
+import os
+import string
+
+# ---- CONFIG ----
+SPRITE_DIR = "sprites"
+SPRITE_SIZE = (64, 64)
+NAME_WIDTH = 15
+STAT_NAME_WIDTH = 12
+STAT_VALUE_WIDTH = 10
+
+# ---- LOAD DATA ----
+df_pokemon = pd.read_csv("pokemon.csv")
+df_pokemon = df_pokemon.drop_duplicates(subset=["Pokemon Name"], keep="first")
+df_pokemon['Pokemon Name'] = df_pokemon['Pokemon Name'].astype(str).str.strip('"')
+
+all_pokemon_names = df_pokemon['Pokemon Name'].tolist()
+non_legendaries = df_pokemon[df_pokemon["Legendary Type"] == "NULL"]["Pokemon Name"].tolist()
+legendaries = df_pokemon[df_pokemon["Legendary Type"] != "NULL"]["Pokemon Name"].tolist()
+
+# Selected stats for display
+selected_stats = ["Attack", "Special Attack", "Defense", "Special Defense", "Speed", "Hidden Ability"]
+friendly_stats = ["Score"] + selected_stats  # Friendly team also shows Score
+
+# ---- SPRITE MAPPING ----
+def normalize_name(name):
+    return name.translate(str.maketrans('', '', string.punctuation)).replace(' ', '').lower()
+
+sprite_dict = {}
+for name in all_pokemon_names:
+    filename = normalize_name(name) + ".png"
+    path = os.path.join(SPRITE_DIR, filename)
+    sprite_dict[name] = path if os.path.isfile(path) else None
+
+# ---- GUI SETUP ----
+root = tk.Tk()
+root.title("Pokémon Optimizer GUI")
+empty_sprite = ImageTk.PhotoImage(Image.new('RGBA', SPRITE_SIZE, (255,255,255,0)))
+
+# ---- TEAM GENERATION ----
+def generate_team(exclude_legendaries=False):
+    pool = non_legendaries if exclude_legendaries else all_pokemon_names
+    return random.sample(pool, 6)
+
+# ---- AUTOCOMPLETE ENTRY CLASS ----
+class AutocompleteEntry(tk.Frame):
+    def __init__(self, master, names, img_label, stats_frame, width=NAME_WIDTH):
+        super().__init__(master)
+        self.names = names
+        self.img_label = img_label
+        self.stats_frame = stats_frame
+        self.stats_labels = []
+
+        # Create 2x3 grid for stats
+        for idx, stat in enumerate(selected_stats):
+            col = idx // 3
+            row = idx % 3
+            lbl_name = ttk.Label(stats_frame, text=stat + ":", width=STAT_NAME_WIDTH, anchor="e")
+            lbl_name.grid(row=row, column=2*col, sticky="e", padx=2)
+            lbl_value = ttk.Label(stats_frame, text="", width=STAT_VALUE_WIDTH, anchor="w")
+            lbl_value.grid(row=row, column=2*col+1, sticky="w", padx=2)
+            self.stats_labels.append(lbl_value)
+
+        self.var = tk.StringVar()
+        self.entry = tk.Entry(self, textvariable=self.var, width=width, relief="solid", bd=1)
+        self.entry.pack(side="left", fill="x", expand=True)
+        self.var.trace_add("write", self.on_change)
+
+        self.entry.bind("<Down>", self.on_down)
+        self.entry.bind("<Up>", self.on_up)
+        self.entry.bind("<Return>", self.on_return)
+
+        self.arrow_btn = tk.Button(self, text="▾", relief="flat", bd=0, padx=3, pady=0, command=self.show_all)
+        self.arrow_btn.pack(side="right", fill="y")
+
+        self.clear_btn = tk.Button(self, text="✕", relief="flat", bd=0, padx=3, pady=0,
+                                   command=self.clear_entry, fg="red")
+        self.clear_btn.pack(side="right", fill="y")
+
+        self.dropdown = tk.Toplevel(master)
+        self.dropdown.withdraw()
+        self.dropdown.overrideredirect(True)
+        self.dropdown.attributes("-topmost", True)
+        self.dropdown.config(bd=1, relief="solid")
+        self.listbox = tk.Listbox(self.dropdown, height=6, activestyle="dotbox",
+                                  selectbackground="#3399FF", selectforeground="white", bd=0)
+        self.listbox.pack(fill="both", expand=True, padx=2, pady=2)
+        self.listbox.bind("<<ListboxSelect>>", self.on_select)
+        self.listbox.bind("<Motion>", self._on_hover)
+
+        master.bind_all("<Button-1>", self._click_outside, add="+")
+
+    def show_all(self):
+        self.var.set("")
+        self.on_change()
+
+    def on_change(self, *args):
+        typed = self.var.get()
+        matches = [name for name in self.names if typed.lower() in name.lower()]
+        if matches:
+            self.listbox.delete(0, tk.END)
+            for name in matches:
+                self.listbox.insert(tk.END, name)
+            x = self.entry.winfo_rootx()
+            y = self.entry.winfo_rooty() + self.entry.winfo_height()
+            if y + self.listbox.winfo_reqheight() > self.entry.winfo_screenheight():
+                y = self.entry.winfo_rooty() - self.listbox.winfo_reqheight()
+            self.dropdown.geometry(f"{self.entry.winfo_width()}x{self.listbox.winfo_reqheight()}+{x}+{y}")
+            self.dropdown.deiconify()
+            self.dropdown.lift()
+        else:
+            self.dropdown.withdraw()
+
+    def on_select(self, event):
+        if self.listbox.curselection():
+            index = self.listbox.curselection()[0]
+            selection = self.listbox.get(index)
+            self.var.set(selection)
+            self.update_sprite_preview(selection)
+            self.entry.master.focus_set()
+            self.dropdown.withdraw()
+
+    def clear_entry(self):
+        self.var.set("")
+        self.img_label.config(image=empty_sprite, text="")
+        for lbl in self.stats_labels:
+            lbl.config(text="")
+        self.dropdown.withdraw()
+        self.entry.focus_set()
+
+    def update_sprite_preview(self, name):
+        path = sprite_dict.get(name)
+        if path:
+            img = Image.open(path).resize(SPRITE_SIZE)
+            img_tk = ImageTk.PhotoImage(img)
+            self.img_label.config(image=img_tk, text=name, compound="left")
+            self.img_label.image = img_tk
+        else:
+            self.img_label.config(image=empty_sprite, text=name, compound="left")
+
+        # Populate stats automatically for opponent side
+        poke_data = df_pokemon[df_pokemon["Pokemon Name"] == name].iloc[0]
+        for lbl, stat in zip(self.stats_labels, selected_stats):
+            lbl.config(text=str(poke_data.get(stat, "")))
+
+    def _click_outside(self, event):
+        widgets = [self.entry, self.arrow_btn, self.clear_btn, self.dropdown, self.listbox]
+        if all(event.widget != w and not str(event.widget).startswith(str(w)) for w in widgets):
+            self.dropdown.withdraw()
+
+    def _on_hover(self, event):
+        idx = self.listbox.nearest(event.y)
+        self.listbox.selection_clear(0, tk.END)
+        self.listbox.selection_set(idx)
+
+    def on_down(self, event):
+        if self.dropdown.state() == "normal":
+            idx = self.listbox.curselection()
+            idx = idx[0] + 1 if idx else 0
+            idx = min(idx, self.listbox.size() - 1)
+            self.listbox.selection_clear(0, tk.END)
+            self.listbox.selection_set(idx)
+            self.listbox.see(idx)
+        return "break"
+
+    def on_up(self, event):
+        if self.dropdown.state() == "normal":
+            idx = self.listbox.curselection()
+            idx = idx[0] - 1 if idx else self.listbox.size() - 1
+            idx = max(idx, 0)
+            self.listbox.selection_clear(0, tk.END)
+            self.listbox.selection_set(idx)
+            self.listbox.see(idx)
+        return "break"
+
+    def on_return(self, event):
+        if self.dropdown.state() == "normal" and self.listbox.curselection():
+            self.on_select(None)
+        return "break"
+
+# ---- FRIENDLY TEAM ----
+friendly_frame = ttk.LabelFrame(root, text="Friendly Team")
+friendly_frame.grid(row=0, column=0, padx=10, pady=10, sticky="n")
+
+friendly_rows = []
+for i in range(6):
+    row_data = {}
+    sprite_lbl = ttk.Label(friendly_frame, image=empty_sprite, width=SPRITE_SIZE[0], compound="top", padding=5)
+    sprite_lbl.grid(row=i, column=0, padx=5, pady=5)
+    row_data['sprite'] = sprite_lbl
+
+    name_lbl = ttk.Label(friendly_frame, text="Empty", width=NAME_WIDTH)
+    name_lbl.grid(row=i, column=1, padx=5, pady=5)
+    row_data['name'] = name_lbl
+
+    stats_frame = ttk.Frame(friendly_frame)
+    stats_frame.grid(row=i, column=2, padx=5, pady=5, sticky="w")
+    row_data['stats_frame'] = stats_frame
+    row_data['stats_labels'] = []
+
+    # Score at top-left
+    lbl_score_name = ttk.Label(stats_frame, text="Score:", width=STAT_NAME_WIDTH, anchor="e")
+    lbl_score_name.grid(row=0, column=0, sticky="e", padx=2)
+    lbl_score_value = ttk.Label(stats_frame, text="", width=STAT_VALUE_WIDTH, anchor="w")
+    lbl_score_value.grid(row=0, column=1, sticky="w", padx=2)
+    row_data['stats_labels'].append(lbl_score_value)
+
+    # Other stats in 2x3 grid
+    for idx, stat in enumerate(selected_stats):
+        col = idx // 3
+        row = idx % 3 + 1
+        lbl_name = ttk.Label(stats_frame, text=stat + ":", width=STAT_NAME_WIDTH, anchor="e")
+        lbl_name.grid(row=row, column=2*col, sticky="e", padx=2)
+        lbl_value = ttk.Label(stats_frame, text="", width=STAT_VALUE_WIDTH, anchor="w")
+        lbl_value.grid(row=row, column=2*col+1, sticky="w", padx=2)
+        row_data['stats_labels'].append(lbl_value)
+
+    friendly_rows.append(row_data)
+
+# ---- OPPONENT TEAM ----
+opponent_frame = ttk.LabelFrame(root, text="Opponent Team")
+opponent_frame.grid(row=0, column=1, padx=10, pady=10, sticky="n")
+
+opponent_entries = []
+opponent_images = []
+opponent_stats_frames = []
+for i in range(6):
+    sprite_lbl = ttk.Label(opponent_frame, image=empty_sprite, width=SPRITE_SIZE[0], compound="top", padding=5)
+    sprite_lbl.grid(row=i, column=0, padx=5, pady=5)
+    opponent_images.append(sprite_lbl)
+
+    stats_frame = ttk.Frame(opponent_frame)
+    stats_frame.grid(row=i, column=2, padx=5, pady=5, sticky="w")
+    opponent_stats_frames.append(stats_frame)
+
+    entry = AutocompleteEntry(opponent_frame, all_pokemon_names, sprite_lbl, stats_frame)
+    entry.grid(row=i, column=1, padx=5, pady=5)
+    opponent_entries.append(entry)
+
+# ---- CHECKBOX FOR LEGENDARIES ----
+exclude_legendaries_var = tk.BooleanVar(value=False)
+legendary_checkbox = ttk.Checkbutton(
+    root,
+    text="Exclude Legendaries (Friendly Team Only)",
+    variable=exclude_legendaries_var
+)
+legendary_checkbox.grid(row=1, column=0, pady=10)
+
+# ---- GENERATE FRIENDLY TEAM ----
+def generate_and_display_team():
+    team = generate_team(exclude_legendaries_var.get())
+    for i, poke in enumerate(team):
+        row = friendly_rows[i]
+        row['name'].config(text=poke)
+        path = sprite_dict.get(poke)
+        if path:
+            img = Image.open(path).resize(SPRITE_SIZE)
+            img_tk = ImageTk.PhotoImage(img)
+            row['sprite'].config(image=img_tk, text=poke, compound="left")
+            row['sprite'].image = img_tk
+        else:
+            row['sprite'].config(image=empty_sprite, text=poke, compound="left")
+
+        poke_data = df_pokemon[df_pokemon["Pokemon Name"] == poke].iloc[0]
+        for lbl, stat in zip(row['stats_labels'], friendly_stats):
+            if stat == "Score":
+                lbl.config(text=f"{random.uniform(0,100):.2f}")  # Placeholder score
+            else:
+                lbl.config(text=str(poke_data.get(stat, "")))
+
+btn_generate = ttk.Button(root, text="Generate Friendly Team", command=generate_and_display_team)
+btn_generate.grid(row=2, column=0, pady=10)
+
+root.mainloop()

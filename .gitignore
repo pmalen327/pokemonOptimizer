@@ -1,0 +1,8 @@
+.venv/
+build/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+dist/
+/sprites/
